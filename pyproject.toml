@@ -1,0 +1,33 @@
+[project]
+name = "GenreClassifier"
+
+version = "0.1.2"
+description = "A Flexible research template adapted from Boyuan Chen's research template for experiments and uses uv for reproducibility"
+readme = "README.md"
+
+requires-python = ">=3.10"
+dependencies = ['torch',
+'torchvision',
+'wandb',
+'hydra-core',
+'pyyaml',
+'omegaconf',
+'colorama',
+'tqdm',
+'opencv-python',
+'matplotlib',
+'lightning',
+'click',
+'moviepy',
+'imageio',
+'einops',
+'wandb-osh',
+'safetensors',
+'trio'
+]
+
+# Optional dependency args, use for things like --no-build-isolation
+[project.optional.dependencies]
+[tool.uv]
+[tool.uv.extra-build-dependencies]
+[tool.uv.extra-build-variables]
