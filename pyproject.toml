@@ -2,7 +2,7 @@
 name = "GenreClassifier"
 
 version = "0.1.2"
-description = "A Flexible research template adapted from Boyuan Chen's research template for experiments and uses uv for reproducibility"
+description = "uv for reproducibility"
 readme = "README.md"
 
 requires-python = ">=3.10"
