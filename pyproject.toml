@@ -6,24 +6,27 @@ description = "uv for reproducibility"
 readme = "README.md"
 
 requires-python = ">=3.10"
-dependencies = ['torch',
-'torchvision',
-'wandb',
-'hydra-core',
-'pyyaml',
-'omegaconf',
-'colorama',
-'tqdm',
-'opencv-python',
-'matplotlib',
-'lightning',
-'click',
-'moviepy',
-'imageio',
-'einops',
-'wandb-osh',
-'safetensors',
-'trio'
+dependencies = [
+    'torch',
+    'torchvision',
+    'wandb',
+    'hydra-core',
+    'pyyaml',
+    'omegaconf',
+    'colorama',
+    'tqdm',
+    'opencv-python',
+    'matplotlib',
+    'lightning',
+    'click',
+    'moviepy',
+    'imageio',
+    'einops',
+    'wandb-osh',
+    'safetensors',
+    'trio',
+    "transformers>=4.57.1",
+    "torchcodec>=0.8.1",
 ]
 
 # Optional dependency args, use for things like --no-build-isolation
