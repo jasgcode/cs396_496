@@ -1,0 +1,17 @@
+.venv
+uv.lock
+sam/
+sam3/
+assets/
+**/sam/
+**/sam3/
+*.pt
+dataset_sampled
+dataset
+*.pyc
+*.pth
+*.json
+*__pycache__*/
+**/sam3.egg-info/
+**/dataset/
+.gradio/
