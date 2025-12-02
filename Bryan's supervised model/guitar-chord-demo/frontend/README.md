@@ -4,15 +4,29 @@ React web application for real-time guitar chord recognition demo.
 
 ## Setup
 
-1. Install dependencies:
+1. **Kill any existing process on port 3000** (if needed):
+```bash
+# Find and kill process on port 3000
+lsof -ti:3000 | xargs kill -9
+
+# Or manually:
+lsof -ti:3000  # Get the PID
+kill -9 <PID>  # Replace <PID> with the number
+```
+
+2. Install dependencies (only needed first time or when dependencies change):
 ```bash
 npm install
 ```
 
-2. Start the development server:
+3. Start the development server:
 ```bash
 npm start
 ```
+
+**Note:** If port 3000 is in use, React will ask if you want to use a different port. You can either:
+- Kill the existing process (recommended)
+- Accept the alternative port (e.g., 3001) and update the backend CORS settings if needed
 
 The app will open at `http://localhost:3000`
 

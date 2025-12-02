@@ -4,16 +4,26 @@ FastAPI backend for processing video and recognizing guitar chords.
 
 ## Setup
 
-1. Install dependencies:
+1. **Kill any existing process on port 8000** (if needed):
+```bash
+# Find and kill process on port 8000
+lsof -ti:8000 | xargs kill -9
+
+# Or manually:
+lsof -ti:8000  # Get the PID
+kill -9 <PID>  # Replace <PID> with the number
+```
+
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Make sure you have the model files in the backend directory:
+3. Make sure you have the model files in the backend directory:
    - `best_chord_model_final.pth`
    - `class_mapping_final.json`
 
-3. Run the server:
+4. Run the server:
 ```bash
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```

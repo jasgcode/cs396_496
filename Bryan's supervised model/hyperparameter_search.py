@@ -259,10 +259,10 @@ def run_coarse_search(dataset_path):
     
     # Coarse grid
     hp_grid = {
-        'lr': [0.001, 0.00001],
-        'epochs': [10, 30],
-        'batch_size': [32],
-        'dropout': [0.3]
+        'lr': [0.01,  0.001, 0.0001, 0.00001],
+        'epochs': [10, 20, 30],
+        'batch_size': [16, 32, 64],
+        'dropout': [0.1, 0.2, 0.3, 0.4]
     }
     
     # Generate all combinations

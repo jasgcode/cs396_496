@@ -10,6 +10,31 @@ A full-stack web application for real-time guitar chord recognition. Record your
 
 ## Quick Start
 
+### Kill Existing Processes (if needed)
+
+If ports 3000 or 8000 are already in use, kill the processes first:
+
+```bash
+# Kill process on port 8000 (backend)
+lsof -ti:8000 | xargs kill -9
+
+# Kill process on port 3000 (frontend)
+lsof -ti:3000 | xargs kill -9
+```
+
+Or manually:
+```bash
+# Find process on port 8000
+lsof -ti:8000
+
+# Kill it (replace PID with the number from above)
+kill -9 <PID>
+
+# Same for port 3000
+lsof -ti:3000
+kill -9 <PID>
+```
+
 ### Backend Setup
 
 ```bash
@@ -22,7 +47,7 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 ```bash
 cd frontend
-npm install
+npm install  # Only needed first time or when dependencies change
 npm start
 ```
 

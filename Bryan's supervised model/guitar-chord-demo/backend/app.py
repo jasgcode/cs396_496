@@ -234,7 +234,7 @@ def preprocess_frame(frame):
     return final_frame
 
 def predict_chord(image):
-    """Predict chord from preprocessed image."""
+    """Predict chord from preprocessed image. Returns predicted chord, confidence, and all probabilities."""
     # Convert BGR to RGB
     rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     pil_image = Image.fromarray(rgb_image)
@@ -251,7 +251,13 @@ def predict_chord(image):
     chord = idx_to_class[predicted.item()]
     confidence_score = confidence.item()
     
-    return chord, confidence_score
+    # Get all probabilities as a dictionary
+    all_probs = {}
+    for idx, prob in enumerate(probabilities):
+        chord_name = idx_to_class[idx]
+        all_probs[chord_name] = round(prob.item(), 4)
+    
+    return chord, confidence_score, all_probs
 
 @app.post("/predict")
 async def predict_video(video: UploadFile = File(...)):
@@ -297,18 +303,20 @@ async def predict_video(video: UploadFile = File(...)):
                 
                 if preprocessed is not None:
                     # Predict chord
-                    chord, confidence = predict_chord(preprocessed)
+                    chord, confidence, all_probs = predict_chord(preprocessed)
                     predictions.append({
                         "timestamp": round(timestamp, 2),
                         "chord": chord,
-                        "confidence": round(confidence, 2)
+                        "confidence": round(confidence, 2),
+                        "probabilities": all_probs
                     })
                 else:
                     # No hand detected
                     predictions.append({
                         "timestamp": round(timestamp, 2),
                         "chord": "No hand detected",
-                        "confidence": 0.0
+                        "confidence": 0.0,
+                        "probabilities": {}
                     })
             
             frame_count += 1
