@@ -6,7 +6,7 @@ A full-stack web application for real-time guitar chord recognition. Record your
 
 - **Frontend**: React web application with webcam access
 - **Backend**: FastAPI server with PyTorch MobileNetV2 model
-- **Model**: Pre-trained model for 14 guitar chord classification
+- **Model**: Pre-trained model for 13 guitar chord classification (MobileNetV2)
 
 ## Quick Start
 
@@ -58,14 +58,17 @@ The frontend will open at `http://localhost:3000` and connect to the backend at 
 - ✅ Webcam recording with MediaRecorder API
 - ✅ Real-time video processing at 2 fps
 - ✅ MediaPipe hand detection and preprocessing
-- ✅ Chord prediction with confidence scores
-- ✅ Video playback with chord overlay
-- ✅ Smooth transitions between chord changes
+- ✅ Chord prediction with confidence scores and full probability distributions
+- ✅ Video playback with chord overlay (top-left corner)
+- ✅ Probabilities panel showing all 13 chord probabilities (bottom panel)
+- ✅ Prediction smoothing (majority vote over last 5 predictions)
+- ✅ Accuracy tracking with ground truth chord sequences
+- ✅ Chord sequence selection (G->D->Am, F->C->D->C)
 - ✅ Modern, dark-themed UI
 
 ## Supported Chords
 
-A, Am, B, Bm, C, Cm, D, Dm, E, Em, F, Fm, G, Gm
+A, Am, B, Bm, C, Cm, D, Dm, Em, F, Fm, G, Gm (13 classes - note: "E" is not included in the current model)
 
 ## Processing Pipeline
 
@@ -90,15 +93,18 @@ guitar-chord-demo/
 ├── backend/
 │   ├── app.py                    # FastAPI application
 │   ├── requirements.txt          # Python dependencies
-│   ├── best_chord_model_final.pth # Trained model
-│   ├── class_mapping_final.json   # Class mappings
+│   ├── best_chord_model_2.pth    # Current model (13 classes) - IN USE
+│   ├── class_mapping_2.json      # Current class mapping (13 classes) - IN USE
+│   ├── best_chord_model_final.pth # Old model (14 classes) - kept for reference
+│   ├── class_mapping_final.json   # Old class mapping (14 classes) - kept for reference
 │   └── README.md
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── CameraRecorder.jsx
 │   │   │   ├── VideoPlayer.jsx
-│   │   │   └── ChordOverlay.jsx
+│   │   │   ├── ChordOverlay.jsx
+│   │   │   └── ProbabilitiesPanel.jsx
 │   │   ├── App.jsx
 │   │   ├── index.js
 │   │   └── index.css
@@ -108,6 +114,16 @@ guitar-chord-demo/
 │   └── README.md
 └── README.md
 ```
+
+## Model Files
+
+**Currently Active:**
+- `backend/best_chord_model_2.pth` - MobileNetV2 model trained on 13 chord classes
+- `backend/class_mapping_2.json` - Maps 13 chord classes (A, Am, B, Bm, C, Cm, D, Dm, Em, F, Fm, G, Gm)
+
+**Legacy Files (kept for reference):**
+- `backend/best_chord_model_final.pth` - Previous model with 14 classes (includes "E")
+- `backend/class_mapping_final.json` - Previous mapping with 14 classes
 
 ## Requirements
 
@@ -122,4 +138,7 @@ guitar-chord-demo/
 - MediaPipe preprocessing matches the training pipeline exactly
 - Chord overlay shows "No hand detected" when hand is not found
 - Video is mirrored for natural viewing experience
+- Predictions are smoothed using majority vote over last 5 predictions (2.5 seconds)
+- Minimum display time of 0.5 seconds prevents rapid flickering
+- Full probability distributions are returned for all 13 chord classes
 

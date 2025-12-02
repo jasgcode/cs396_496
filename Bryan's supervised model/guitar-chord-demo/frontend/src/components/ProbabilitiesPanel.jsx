@@ -1,7 +1,7 @@
 import React from 'react';
 import './ProbabilitiesPanel.css';
 
-const CHORDS = ['A', 'Am', 'B', 'Bm', 'C', 'Cm', 'D', 'Dm', 'E', 'Em', 'F', 'Fm', 'G', 'Gm'];
+const CHORDS = ['A', 'Am', 'B', 'Bm', 'C', 'Cm', 'D', 'Dm', 'Em', 'F', 'Fm', 'G', 'Gm'];
 
 function ProbabilitiesPanel({ currentPrediction, accuracy }) {
   if (!currentPrediction || !currentPrediction.probabilities) {

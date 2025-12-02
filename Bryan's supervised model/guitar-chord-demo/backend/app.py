@@ -33,7 +33,7 @@ hands = mp_hands.Hands(
 )
 
 # Load class mapping
-with open('class_mapping_final.json', 'r') as f:
+with open('class_mapping_2.json', 'r') as f:
     class_mapping = json.load(f)
     idx_to_class = {int(k): v for k, v in class_mapping['idx_to_class'].items()}
     num_classes = len(idx_to_class)
@@ -47,7 +47,7 @@ model.classifier = nn.Sequential(
     nn.Linear(num_features, num_classes)
 )
 
-checkpoint = torch.load('best_chord_model_final.pth', map_location=device)
+checkpoint = torch.load('best_chord_model_2.pth', map_location=device)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 model.to(device)

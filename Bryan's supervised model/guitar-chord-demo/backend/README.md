@@ -20,8 +20,10 @@ pip install -r requirements.txt
 ```
 
 3. Make sure you have the model files in the backend directory:
-   - `best_chord_model_final.pth`
-   - `class_mapping_final.json`
+   - `best_chord_model_2.pth` (new model, 13 classes - currently in use)
+   - `class_mapping_2.json` (new mapping, 13 classes - currently in use)
+   - `best_chord_model_final.pth` (old model, 14 classes - kept for reference)
+   - `class_mapping_final.json` (old mapping, 14 classes - kept for reference)
 
 4. Run the server:
 ```bash
