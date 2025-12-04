@@ -5,6 +5,7 @@ function CameraRecorder({ onRecordingComplete, onCancel }) {
   const videoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const cameraTypeRef = useRef(null); // Store camera type
   const [recording, setRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState(null);
@@ -23,6 +24,25 @@ function CameraRecorder({ onRecordingComplete, onCancel }) {
           },
           audio: false
         });
+        
+        // Detect camera type from video track settings
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          const settings = videoTrack.getSettings();
+          const capabilities = videoTrack.getCapabilities();
+          
+          // Determine camera type
+          if (settings.facingMode) {
+            cameraTypeRef.current = settings.facingMode; // 'user' or 'environment'
+          } else if (capabilities.facingMode && capabilities.facingMode.length > 0) {
+            cameraTypeRef.current = capabilities.facingMode[0];
+          } else {
+            // Default: assume front-facing if we requested 'user'
+            cameraTypeRef.current = 'user';
+          }
+          
+          console.log('Camera type detected:', cameraTypeRef.current);
+        }
         
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -70,7 +90,8 @@ function CameraRecorder({ onRecordingComplete, onCancel }) {
 
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-        onRecordingComplete(blob);
+        // Pass camera type along with blob
+        onRecordingComplete(blob, cameraTypeRef.current || 'user');
       };
 
       mediaRecorder.start();

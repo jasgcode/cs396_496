@@ -38,3 +38,9 @@ build/
 .DS_Store
 Thumbs.db
 
+# Recordings
+backend/recordings/
+recordings/
+*.mp4
+*.webm
+

@@ -5,12 +5,14 @@ import torch
 import torch.nn as nn
 from torchvision import transforms, models
 from PIL import Image
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import tempfile
 import os
 from typing import List, Dict
+from datetime import datetime
+import subprocess
 
 app = FastAPI(title="Guitar Chord Recognition API")
 
@@ -121,12 +123,18 @@ def rotate_image(image, angle):
     
     return rotated
 
-def detect_left_hand_bbox(image):
+def detect_left_hand_bbox(image, camera_type='user'):
     """
     Detect LEFT hand (fretting hand) using MediaPipe.
     Returns (x_min, y_min, x_max, y_max) or None if not detected.
-    Note: MediaPipe labels are from camera perspective (mirrored).
-    For front-facing camera: "Right" label = your left hand
+    
+    Args:
+        image: Input frame
+        camera_type: 'user' (front-facing/mirrored) or 'environment' (back-facing)
+    
+    Note: MediaPipe labels are from camera perspective.
+    - Front-facing camera (mirrored): "Right" label = your left hand
+    - Back-facing camera: "Left" label = your left hand
     """
     h, w, _ = image.shape
     rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -135,14 +143,17 @@ def detect_left_hand_bbox(image):
     if not results.multi_hand_landmarks or not results.multi_handedness:
         return None
     
+    # Determine which label to look for based on camera type
+    target_label = "Right" if camera_type == "user" else "Left"
+    
     # Find the LEFT hand (fretting hand)
     left_hand_landmarks = None
     for idx, handedness in enumerate(results.multi_handedness):
         label = handedness.classification[0].label
         
-        # For front-facing camera (mirrored):
-        # "Right" label means YOUR left hand (fretting hand)
-        if label == "Right":
+        # For front-facing camera (mirrored): "Right" = your left hand
+        # For back-facing camera: "Left" = your left hand
+        if label == target_label:
             left_hand_landmarks = results.multi_hand_landmarks[idx]
             break
     
@@ -197,7 +208,7 @@ def remove_black_borders(image, threshold=10):
     
     return image[ymin:ymax+1, xmin:xmax+1]
 
-def preprocess_frame(frame):
+def preprocess_frame(frame, camera_type='user'):
     """
     Preprocess a single frame following the training pipeline:
     1. Detect strings and rotate entire frame
@@ -205,6 +216,10 @@ def preprocess_frame(frame):
     3. Crop to hand region
     4. Remove black borders
     5. Resize to 224x224
+    
+    Args:
+        frame: Input frame
+        camera_type: 'user' (front-facing) or 'environment' (back-facing)
     """
     # Step 1: Detect strings and rotate
     angle = detect_strings_angle(frame)
@@ -214,7 +229,7 @@ def preprocess_frame(frame):
         rotated_frame = frame
     
     # Step 2: Detect left hand on rotated frame
-    bbox = detect_left_hand_bbox(rotated_frame)
+    bbox = detect_left_hand_bbox(rotated_frame, camera_type)
     
     if bbox is None:
         return None
@@ -260,11 +275,26 @@ def predict_chord(image):
     return chord, confidence_score, all_probs
 
 @app.post("/predict")
-async def predict_video(video: UploadFile = File(...)):
+async def predict_video(
+    video: UploadFile = File(...),
+    camera_type: str = Form('user')
+):
     """
     Process video and return chord predictions at 2 fps.
     Returns array of predictions with timestamps.
+    
+    Args:
+        video: Video file to process
+        camera_type: 'user' (front-facing) or 'environment' (back-facing)
     """
+    print("\n" + "="*80)
+    print("🎬 NEW PREDICTION REQUEST RECEIVED")
+    print("="*80)
+    print(f"📹 Video file: {video.filename}")
+    print(f"📦 Content type: {video.content_type}")
+    print(f"📷 Camera type: {camera_type} ({'front-facing' if camera_type == 'user' else 'back-facing'})")
+    print(f"📊 File size: {video.size / (1024*1024):.2f} MB" if hasattr(video, 'size') else "📊 File size: unknown")
+    
     # Save uploaded video to temporary file
     # Handle both webm and mp4 formats
     suffix = '.webm' if video.content_type and 'webm' in video.content_type else '.mp4'
@@ -272,6 +302,7 @@ async def predict_video(video: UploadFile = File(...)):
         tmp_path = tmp_file.name
         content = await video.read()
         tmp_file.write(content)
+        print(f"💾 Saved to temp file: {tmp_path}")
     
     try:
         # Open video
@@ -283,11 +314,26 @@ async def predict_video(video: UploadFile = File(...)):
         if fps == 0:
             fps = 30  # Default to 30 fps if unknown
         
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps if fps > 0 else 0
+        
+        print(f"\n📐 Video Properties:")
+        print(f"   FPS: {fps:.2f}")
+        print(f"   Total frames: {total_frames}")
+        print(f"   Duration: {duration:.2f} seconds")
+        
         # Process at 2 fps (every 15 frames at 30fps)
         frame_interval = max(1, int(fps / 2))
+        print(f"   Processing at 2 fps (every {frame_interval} frames)")
         
         predictions = []
         frame_count = 0
+        processed_count = 0
+        hand_detected_count = 0
+        no_hand_count = 0
+        
+        print(f"\n🔄 Processing frames...")
+        print("-" * 80)
         
         while cap.isOpened():
             ret, frame = cap.read()
@@ -297,13 +343,22 @@ async def predict_video(video: UploadFile = File(...)):
             # Process every frame_interval frames
             if frame_count % frame_interval == 0:
                 timestamp = frame_count / fps
+                processed_count += 1
                 
                 # Preprocess frame
-                preprocessed = preprocess_frame(frame)
+                preprocessed = preprocess_frame(frame, camera_type)
                 
                 if preprocessed is not None:
                     # Predict chord
                     chord, confidence, all_probs = predict_chord(preprocessed)
+                    hand_detected_count += 1
+                    
+                    # Get top 3 probabilities for logging
+                    sorted_probs = sorted(all_probs.items(), key=lambda x: x[1], reverse=True)[:3]
+                    top_probs_str = ", ".join([f"{c}: {p:.2%}" for c, p in sorted_probs])
+                    
+                    print(f"⏱️  {timestamp:6.2f}s | 🎸 {chord:3s} | Confidence: {confidence:5.2%} | Top: {top_probs_str}")
+                    
                     predictions.append({
                         "timestamp": round(timestamp, 2),
                         "chord": chord,
@@ -312,6 +367,9 @@ async def predict_video(video: UploadFile = File(...)):
                     })
                 else:
                     # No hand detected
+                    no_hand_count += 1
+                    print(f"⏱️  {timestamp:6.2f}s | ⚠️  No hand detected")
+                    
                     predictions.append({
                         "timestamp": round(timestamp, 2),
                         "chord": "No hand detected",
@@ -322,6 +380,28 @@ async def predict_video(video: UploadFile = File(...)):
             frame_count += 1
         
         cap.release()
+        
+        print("-" * 80)
+        print(f"\n✅ Processing Complete!")
+        print(f"   Total frames processed: {processed_count}")
+        print(f"   Hand detected: {hand_detected_count} ({hand_detected_count/processed_count*100:.1f}%)")
+        print(f"   No hand detected: {no_hand_count} ({no_hand_count/processed_count*100:.1f}%)")
+        print(f"   Total predictions: {len(predictions)}")
+        
+        # Show chord distribution
+        chord_counts = {}
+        for pred in predictions:
+            if pred['chord'] != 'No hand detected':
+                chord = pred['chord']
+                chord_counts[chord] = chord_counts.get(chord, 0) + 1
+        
+        if chord_counts:
+            print(f"\n📊 Chord Distribution:")
+            for chord, count in sorted(chord_counts.items(), key=lambda x: x[1], reverse=True):
+                percentage = (count / hand_detected_count * 100) if hand_detected_count > 0 else 0
+                print(f"   {chord:3s}: {count:3d} times ({percentage:5.1f}%)")
+        
+        print("="*80 + "\n")
         
         return predictions
     
@@ -340,4 +420,108 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+@app.post("/save-recording")
+async def save_recording(video: UploadFile = File(...)):
+    """
+    Save recorded video to recordings folder as MP4.
+    """
+    print("\n" + "💾 SAVE RECORDING REQUEST")
+    print(f"   File: {video.filename}")
+    
+    try:
+        # Create recordings folder if it doesn't exist
+        recordings_dir = "recordings"
+        os.makedirs(recordings_dir, exist_ok=True)
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"recording_{timestamp}.mp4"
+        output_path = os.path.join(recordings_dir, filename)
+        print(f"   Saving to: {output_path}")
+        
+        # Save uploaded video to temporary file first
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as tmp_file:
+            tmp_path = tmp_file.name
+            content = await video.read()
+            tmp_file.write(content)
+        
+        try:
+            # Try to convert to MP4 using ffmpeg (if available)
+            try:
+                result = subprocess.run(
+                    ['ffmpeg', '-i', tmp_path, '-c:v', 'libx264', '-c:a', 'aac', '-y', output_path],
+                    check=True,
+                    capture_output=True,
+                    timeout=60
+                )
+                # Successfully converted, remove temp file
+                os.unlink(tmp_path)
+            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                # ffmpeg not available or conversion failed, try using OpenCV
+                cap = cv2.VideoCapture(tmp_path)
+                if not cap.isOpened():
+                    # If OpenCV can't read it, save as webm
+                    output_path = os.path.join(recordings_dir, f"recording_{timestamp}.webm")
+                    import shutil
+                    shutil.copy(tmp_path, output_path)
+                    os.unlink(tmp_path)
+                else:
+                    # Get video properties
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    if fps == 0:
+                        fps = 30  # Default fps
+                    fps = int(fps)
+                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    
+                    # Try different codecs for MP4
+                    fourcc_options = [
+                        cv2.VideoWriter_fourcc(*'mp4v'),
+                        cv2.VideoWriter_fourcc(*'XVID'),
+                        cv2.VideoWriter_fourcc(*'avc1')
+                    ]
+                    
+                    out = None
+                    for fourcc in fourcc_options:
+                        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+                        if out.isOpened():
+                            break
+                        out.release()
+                    
+                    if out and out.isOpened():
+                        # Read and write frames
+                        while True:
+                            ret, frame = cap.read()
+                            if not ret:
+                                break
+                            out.write(frame)
+                        out.release()
+                    else:
+                        # If all codecs fail, save as webm
+                        output_path = os.path.join(recordings_dir, f"recording_{timestamp}.webm")
+                        import shutil
+                        shutil.copy(tmp_path, output_path)
+                    
+                    cap.release()
+                    os.unlink(tmp_path)
+            
+            file_size = os.path.getsize(output_path) / (1024 * 1024)  # Size in MB
+            print(f"   ✅ Saved successfully ({file_size:.2f} MB)")
+            
+            return {
+                "status": "success",
+                "message": "Recording saved successfully",
+                "filename": filename,
+                "path": output_path
+            }
+        except Exception as e:
+            # Clean up temp file on error
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise e
+            
+    except Exception as e:
+        print(f"   ❌ Error saving recording: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error saving recording: {str(e)}")
 

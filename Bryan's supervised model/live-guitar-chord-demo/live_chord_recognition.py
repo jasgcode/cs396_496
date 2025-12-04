@@ -16,6 +16,8 @@ import os
 import time
 from collections import deque
 from pathlib import Path
+import threading
+from queue import Queue
 
 # Configuration
 # Get script directory and resolve model path relative to it
@@ -28,6 +30,7 @@ MIN_VOTES = 3  # Minimum votes to change chord
 MIN_DISPLAY_TIME = 0.5  # Minimum 0.5 seconds before allowing change
 MAX_UPDATE_RATE = 1.0  # Maximum 1 update per second
 DEFAULT_CAMERA_INDEX = 0  # Default camera
+PROCESS_EVERY_N_FRAMES = 1  # Process every 3rd frame to reduce load
 
 # Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
@@ -408,16 +411,94 @@ def main():
     # Detect camera type (assume front-facing by default)
     camera_type = 'user'
     
-    # Prediction state
-    recent_predictions = deque(maxlen=WINDOW_SIZE * 2)  # Keep more for smoothing
-    current_chord = None
-    current_confidence = 0.0
-    current_probabilities = {}
-    chord_start_time = 0.0
-    last_update_time = 0.0
+    # Shared state for threading
+    recent_predictions = deque(maxlen=WINDOW_SIZE * 2)
+    display_state = {
+        'chord': None,
+        'confidence': 0.0,
+        'probabilities': {},
+        'chord_start_time': 0.0,
+        'last_update_time': 0.0
+    }
+    state_lock = threading.Lock()
+    frame_queue = Queue(maxsize=2)  # Small queue to avoid lag
+    processing_active = threading.Event()
+    processing_active.set()
     
     frame_count = 0
     fps_start_time = time.time()
+    process_frame_count = 0
+    
+    def process_frame_worker():
+        """Worker thread to process frames asynchronously."""
+        while processing_active.is_set():
+            try:
+                # Get frame from queue (with timeout to check if we should stop)
+                try:
+                    frame_data = frame_queue.get(timeout=0.1)
+                    frame, current_time = frame_data
+                except:
+                    continue
+                
+                # Process frame
+                try:
+                    preprocessed = preprocess_frame(frame, camera_type)
+                except Exception as e:
+                    preprocessed = None
+                
+                if preprocessed is not None:
+                    # Predict chord
+                    try:
+                        chord, confidence, probs = predict_chord(preprocessed)
+                    except Exception as e:
+                        chord = "Error"
+                        confidence = 0.0
+                        probs = {}
+                    
+                    # Add to recent predictions
+                    with state_lock:
+                        recent_predictions.append({
+                            'chord': chord,
+                            'confidence': confidence,
+                            'probabilities': probs,
+                            'time': current_time
+                        })
+                        
+                        # Apply smoothing
+                        smoothed_pred, new_chord, new_start_time = smooth_predictions(
+                            list(recent_predictions),
+                            current_time,
+                            display_state['chord'],
+                            display_state['chord_start_time']
+                        )
+                        
+                        # Update display state if prediction changed
+                        if smoothed_pred is not None:
+                            time_since_last_update = current_time - display_state['last_update_time']
+                            if new_chord != display_state['chord'] or time_since_last_update >= MAX_UPDATE_RATE:
+                                display_state['chord'] = new_chord
+                                display_state['confidence'] = smoothed_pred['confidence']
+                                display_state['probabilities'] = smoothed_pred['probabilities']
+                                display_state['chord_start_time'] = new_start_time
+                                display_state['last_update_time'] = current_time
+                else:
+                    # No hand detected
+                    with state_lock:
+                        recent_predictions.append({
+                            'chord': 'No hand detected',
+                            'confidence': 0.0,
+                            'probabilities': {},
+                            'time': current_time
+                        })
+                
+                frame_queue.task_done()
+            except Exception as e:
+                print(f"Error in processing thread: {e}")
+                continue
+    
+    # Start processing thread
+    processing_thread = threading.Thread(target=process_frame_worker, daemon=True)
+    processing_thread.start()
     
     print("Starting live recognition...\n")
     
@@ -431,56 +512,18 @@ def main():
             current_time = time.time()
             frame_count += 1
             
-            # Process every frame
-            try:
-                preprocessed = preprocess_frame(frame, camera_type)
-            except Exception as e:
-                print(f"Error in preprocessing: {e}")
-                preprocessed = None
+            # Only process every Nth frame to reduce load
+            if frame_count % PROCESS_EVERY_N_FRAMES == 0:
+                process_frame_count += 1
+                # Add frame to processing queue (non-blocking, drop if queue full)
+                if not frame_queue.full():
+                    frame_queue.put((frame.copy(), current_time))
             
-            if preprocessed is not None:
-                # Predict chord
-                try:
-                    chord, confidence, probs = predict_chord(preprocessed)
-                except Exception as e:
-                    print(f"Error in prediction: {e}")
-                    chord = "Error"
-                    confidence = 0.0
-                    probs = {}
-                
-                # Add to recent predictions
-                recent_predictions.append({
-                    'chord': chord,
-                    'confidence': confidence,
-                    'probabilities': probs,
-                    'time': current_time
-                })
-            else:
-                # No hand detected
-                recent_predictions.append({
-                    'chord': 'No hand detected',
-                    'confidence': 0.0,
-                    'probabilities': {},
-                    'time': current_time
-                })
-            
-            # Apply smoothing (every frame, but only update display if changed)
-            smoothed_pred, new_chord, new_start_time = smooth_predictions(
-                list(recent_predictions),
-                current_time,
-                current_chord,
-                chord_start_time
-            )
-            
-            # Update display if prediction changed and enough time has passed
-            if smoothed_pred is not None:
-                time_since_last_update = current_time - last_update_time
-                if new_chord != current_chord or time_since_last_update >= MAX_UPDATE_RATE:
-                    current_chord = new_chord
-                    current_confidence = smoothed_pred['confidence']
-                    current_probabilities = smoothed_pred['probabilities']
-                    chord_start_time = new_start_time
-                    last_update_time = current_time
+            # Get current display state (thread-safe)
+            with state_lock:
+                current_chord = display_state['chord']
+                current_confidence = display_state['confidence']
+                current_probabilities = display_state['probabilities'].copy()
             
             # Get top 3 chords
             if current_probabilities:
@@ -488,7 +531,7 @@ def main():
             else:
                 top_chords = []
             
-            # Draw overlay
+            # Draw overlay (always smooth, no blocking)
             display_frame = draw_overlay(frame, current_chord, current_confidence, top_chords)
             
             # Calculate and display FPS
@@ -499,7 +542,7 @@ def main():
                 cv2.putText(display_frame, f"FPS: {fps:.1f}", (20, h - 20), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
-            # Display frame
+            # Display frame (smooth, no blocking)
             cv2.imshow('Live Guitar Chord Recognition', display_frame)
             
             # Handle keyboard input
@@ -522,6 +565,12 @@ def main():
         print("\nInterrupted by user")
     
     finally:
+        # Stop processing thread
+        processing_active.clear()
+        # Wait for queue to empty
+        frame_queue.join()
+        processing_thread.join(timeout=1.0)
+        
         cap.release()
         cv2.destroyAllWindows()
         hands.close()

@@ -5,9 +5,10 @@ import './App.css';
 
 const API_URL = 'http://localhost:8000';
 
-async function predictChords(videoBlob) {
+async function predictChords(videoBlob, cameraType = 'user') {
   const formData = new FormData();
   formData.append('video', videoBlob, 'recording.webm');
+  formData.append('camera_type', cameraType); // Pass camera type to backend
   
   try {
     // Create abort controller for timeout (5 minutes)
@@ -57,7 +58,7 @@ function App() {
   const [selectedSequence, setSelectedSequence] = useState('');
   const [selectedChords, setSelectedChords] = useState([]);
 
-  const handleRecordingComplete = async (videoBlob) => {
+  const handleRecordingComplete = async (videoBlob, cameraType) => {
     setRecordedVideo(videoBlob);
     setProcessing(true);
     setError(null);
@@ -79,10 +80,31 @@ function App() {
       return;
     }
     
-    console.log('Sending video to backend...');
+    // Save recording to backend
+    try {
+      console.log('Saving recording...');
+      const saveFormData = new FormData();
+      saveFormData.append('video', videoBlob, 'recording.webm');
+      
+      const saveResponse = await fetch(`${API_URL}/save-recording`, {
+        method: 'POST',
+        body: saveFormData
+      });
+      
+      if (saveResponse.ok) {
+        const saveResult = await saveResponse.json();
+        console.log('Recording saved:', saveResult.filename);
+      } else {
+        console.warn('Failed to save recording, but continuing with prediction');
+      }
+    } catch (err) {
+      console.warn('Error saving recording:', err, '- continuing with prediction');
+    }
+    
+    console.log('Sending video to backend for prediction...');
     
     try {
-      const results = await predictChords(videoBlob);
+      const results = await predictChords(videoBlob, cameraType);
       console.log('Received predictions:', results.length, 'predictions');
       setPredictions(results);
     } catch (err) {
